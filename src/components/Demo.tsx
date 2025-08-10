@@ -18,7 +18,7 @@ import { ShareButton } from "./ui/Share";
 import { config } from "~/components/providers/WagmiProvider";
 import { Button } from "~/components/ui/Button";
 import { truncateAddress } from "~/lib/truncateAddress";
-import { base, degen, mainnet, optimism, unichain } from "wagmi/chains";
+import { base, degen, mainnet, optimism, unichain } from "viem/chains";
 import { BaseError, UserRejectedRequestError } from "viem";
 import { useMiniApp } from "@neynar/react";
 import { Header } from "~/components/ui/Header";
@@ -32,6 +32,13 @@ interface NeynarUser {
   score: number;
 }
 
+interface Match {
+  url: string;
+  event: string;
+  round: string;
+  teams: { name: string; score: string }[];
+}
+
 export default function Demo(
   { title }: { title?: string } = { title: "Frames v2 Demo" }
 ) {
@@ -42,6 +49,7 @@ export default function Demo(
   const [sendNotificationResult, setSendNotificationResult] = useState("");
   const [copied, setCopied] = useState(false);
   const [neynarUser, setNeynarUser] = useState<NeynarUser | null>(null);
+  const [matches, setMatches] = useState<Match[]>([]);
 
   const { address, isConnected } = useAccount();
   const chainId = useChainId();
@@ -53,6 +61,17 @@ export default function Demo(
     console.log("isConnected", isConnected);
     console.log("chainId", chainId);
   }, [context, address, isConnected, chainId, isSDKLoaded]);
+
+  // Fetch match data
+  useEffect(() => {
+    fetch("http://localhost:3001/api/matches")
+      .then((res) => res.json())
+      .then((data) => {
+        console.log("Match data:", data);
+        setMatches(data.matches);
+      })
+      .catch((err) => console.error("Error fetching match data:", err));
+  }, []);
 
   // Fetch Neynar user object when context is available
   useEffect(() => {
@@ -203,10 +222,41 @@ export default function Demo(
         <h1 className="text-2xl font-bold text-center mb-4">{title}</h1>
 
         {activeTab === "home" && (
-          <div className="flex items-center justify-center h-[calc(100vh-200px)] px-6">
-            <div className="text-center w-full max-w-md mx-auto">
-              <p className="text-lg mb-2">Put your content here!</p>
-              <p className="text-sm text-gray-500">Powered by Neynar 🪐</p>
+          <div className="flex items-center justify-center min-h-[calc(100vh-200px)] px-6">
+            <div className="w-full max-w-sm mx-auto bg-background text-foreground border border-border rounded-2xl p-4 shadow-xl">
+              <div className="mb-4 text-center">
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent text-transparent bg-clip-text">Upcoming Valorant Matches</h2>
+                <p className="text-sm text-muted-foreground">Select a match to view details</p>
+              </div>
+              <div className="space-y-4 max-h-[calc(100vh-300px)] overflow-y-auto">
+                {matches.map((match, index) => {
+                  const id = match.url.split('/')[3] || index.toString();
+                  const team1 = match.teams[0] || { name: 'TBD', score: '0' };
+                  const team2 = match.teams[1] || { name: 'TBD', score: '0' };
+                  const buttonText = `${team1.name} (${team1.score}) vs ${team2.name} (${team2.score}) - ${match.event}`;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        window.location.href = `/matches/${id}?url=${encodeURIComponent(match.url)}`;
+                      }}
+                      className="bg-gradient-to-r from-primary to-primary/80 text-primary-foreground border-[3px] border-border rounded-xl px-4 py-4 text-center font-bold text-lg w-full shadow-lg hover:shadow-xl transition-all hover:scale-105 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-accent" /> {/* Placeholder for team1 avatar */}
+                        <span>{team1.name}</span>
+                        <span className="text-muted-foreground">({team1.score})</span>
+                      </div>
+                      <span className="text-muted-foreground font-normal">vs</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">({team2.score})</span>
+                        <span>{team2.name}</span>
+                        <div className="w-8 h-8 rounded-full bg-accent" /> {/* Placeholder for team2 avatar */}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -493,14 +543,9 @@ function SendEth() {
 
 const renderError = (error: Error | null) => {
   if (!error) return null;
-  if (error instanceof BaseError) {
-    const isUserRejection = error.walk(
-      (e) => e instanceof UserRejectedRequestError
-    );
 
-    if (isUserRejection) {
-      return <div className="text-red-500 text-xs mt-1">Rejected by user.</div>;
-    }
+  if (error.message.includes("User rejected")) {
+    return <div className="text-red-500 text-xs mt-1">Rejected by user.</div>;
   }
 
   return <div className="text-red-500 text-xs mt-1">{error.message}</div>;
